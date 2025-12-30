@@ -228,24 +228,127 @@ class RVVAnalyzer:
         print(f"\nStatistics saved to: {output_path}")
 
 
+def scan_models(models_dir, objdump_path, sections=None, visualize=False):
+    """
+    Scan a directory for IREE models and analyze all .adx files
+
+    Directory structure expected:
+    models/
+    ├── Bird/
+    │   ├── bird.mlir
+    │   └── bird/OUTPUT/bird.adx
+    ├── Mobile_Vit/
+    │   ├── Mobile_Vit.mlir
+    │   └── Mobile_Vit/OUTPUT/Mobile_Vit.adx
+    └── YOLOv5n/
+        ├── yolov5n.tosa.mlir
+        └── yolov5n.tosa/OUTPUT/yolov5n.tosa.adx
+    """
+    models_path = Path(models_dir)
+    if not models_path.exists():
+        print(f"Error: Directory not found: {models_dir}", file=sys.stderr)
+        return []
+
+    # Find all .mlir files
+    mlir_files = list(models_path.rglob('*.mlir'))
+
+    if not mlir_files:
+        print(f"No .mlir files found in {models_dir}", file=sys.stderr)
+        return []
+
+    print(f"\nFound {len(mlir_files)} model(s) to analyze")
+    print(f"{'='*60}\n")
+
+    results = []
+    analyzed_count = 0
+    skipped_count = 0
+
+    for idx, mlir_file in enumerate(mlir_files, 1):
+        # Extract model name (remove .mlir extension)
+        model_basename = mlir_file.stem  # e.g., "bird" or "yolov5n.tosa"
+        model_dir = mlir_file.parent
+
+        # Construct expected .adx path
+        # models/Bird/bird.mlir -> models/Bird/bird/OUTPUT/bird.adx
+        adx_path = model_dir / model_basename / "OUTPUT" / f"{model_basename}.adx"
+
+        print(f"[{idx}/{len(mlir_files)}] Processing: {model_basename}")
+
+        if not adx_path.exists():
+            print(f"  ⚠️  Skipping: {adx_path} not found")
+            skipped_count += 1
+            continue
+
+        try:
+            # Analyze the model
+            analyzer = RVVAnalyzer(objdump_path=objdump_path, sections=sections)
+
+            print(f"  📊 Analyzing: {adx_path}")
+            disassembly = analyzer.run_objdump(str(adx_path))
+            analyzer.parse_disassembly(disassembly)
+
+            # Save JSON to OUTPUT directory
+            output_dir = adx_path.parent
+            json_path = output_dir / f"{model_basename}_rvv_stats.json"
+            analyzer.save_json(str(json_path), model_basename)
+
+            # Generate visualization if requested
+            if visualize:
+                try:
+                    from arvvi_visualizer import visualize_statistics
+                    visualize_statistics(analyzer.get_statistics(), model_basename, str(output_dir))
+                    print(f"  ✅ Visualization saved")
+                except ImportError:
+                    print(f"  ⚠️  matplotlib not installed, skipping visualization")
+
+            results.append({
+                'model': model_basename,
+                'adx_path': str(adx_path),
+                'json_path': str(json_path),
+                'stats': analyzer.get_statistics()
+            })
+
+            analyzed_count += 1
+            print(f"  ✅ Complete: {analyzer.rvv_instructions} RVV instructions\n")
+
+        except Exception as e:
+            print(f"  ❌ Error analyzing {model_basename}: {e}\n")
+            skipped_count += 1
+            continue
+
+    # Print summary
+    print(f"\n{'='*60}")
+    print(f"Batch Analysis Summary")
+    print(f"{'='*60}")
+    print(f"Total models found:    {len(mlir_files)}")
+    print(f"Successfully analyzed: {analyzed_count}")
+    print(f"Skipped:              {skipped_count}")
+    print(f"{'='*60}\n")
+
+    return results
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='ARVVI - AndeSight RISC-V Vector Instruction Analyzer',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s /models/mobilenetV1/OUTPUT/output.adx
-  %(prog)s /models/mobilenetV1/OUTPUT/output.adx -o stats.json
-  %(prog)s /models/mobilenetV1/OUTPUT/output.adx --section .data
-  %(prog)s /models/mobilenetV1/OUTPUT/output.adx --section .data,.text
-  %(prog)s /models/mobilenetV1/OUTPUT/output.adx --function main
-  %(prog)s /models/mobilenetV1/OUTPUT/output.adx --function main,inference,matmul
-  %(prog)s /models/mobilenetV1/OUTPUT/output.adx --objdump /path/to/objdump
-  %(prog)s /models/mobilenetV1/OUTPUT/output.adx --visualize
+  Single file analysis:
+    %(prog)s /models/mobilenetV1/OUTPUT/output.adx
+    %(prog)s /models/mobilenetV1/OUTPUT/output.adx -o stats.json
+    %(prog)s /models/mobilenetV1/OUTPUT/output.adx --section .data
+    %(prog)s /models/mobilenetV1/OUTPUT/output.adx --function main
+
+  Batch analysis (scan directory):
+    %(prog)s --scan models/ --section .data --visualize
+    %(prog)s --scan ../AutoIREE_zoo/models/ --section .data -v
         """
     )
 
-    parser.add_argument('binary', help='Path to the binary file to analyze')
+    parser.add_argument('binary', nargs='?', help='Path to the binary file to analyze (not used with --scan)')
+    parser.add_argument('--scan', dest='scan_dir', metavar='DIR',
+                       help='Scan directory for models and analyze all .adx files (batch mode)')
     parser.add_argument('-o', '--output', help='Output JSON file for statistics')
     parser.add_argument('-m', '--model', help='Model name for the report')
     parser.add_argument('--objdump', default=DEFAULT_OBJDUMP,
@@ -258,6 +361,26 @@ Examples:
                        help='Generate visualization charts')
 
     args = parser.parse_args()
+
+    # Parse section list if provided
+    sections = None
+    if args.sections:
+        sections = [s.strip() for s in args.sections.split(',')]
+
+    # Check if using scan mode
+    if args.scan_dir:
+        # Batch mode: scan directory
+        scan_models(
+            models_dir=args.scan_dir,
+            objdump_path=args.objdump,
+            sections=sections,
+            visualize=args.visualize
+        )
+        return 0
+
+    # Single file mode
+    if not args.binary:
+        parser.error("Either provide a binary file or use --scan <directory>")
 
     # Check if binary file exists
     binary_path = Path(args.binary)
@@ -275,11 +398,6 @@ Examples:
     functions = None
     if args.functions:
         functions = [f.strip() for f in args.functions.split(',')]
-
-    # Parse section list if provided
-    sections = None
-    if args.sections:
-        sections = [s.strip() for s in args.sections.split(',')]
 
     # Run analysis
     print(f"Analyzing binary: {args.binary}")
