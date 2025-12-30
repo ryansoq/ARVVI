@@ -1,0 +1,5 @@
+# ARVVI - AndeSight RISC-V Vector Instruction Analyzer
+# Python dependencies
+
+# For visualization
+matplotlib>=3.5.0
