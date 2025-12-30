@@ -249,8 +249,13 @@ def scan_models(models_dir, objdump_path, sections=None, visualize=False):
         print(f"Error: Directory not found: {models_dir}", file=sys.stderr)
         return []
 
-    # Find all .mlir files
-    mlir_files = list(models_path.rglob('*.mlir'))
+    # Find all .mlir files in direct subdirectories only (not recursive)
+    # Pattern: models/*/xxx.mlir (one level deep)
+    mlir_files = []
+    for subdir in models_path.iterdir():
+        if subdir.is_dir():
+            # Find .mlir files in this subdirectory (not deeper)
+            mlir_files.extend(subdir.glob('*.mlir'))
 
     if not mlir_files:
         print(f"No .mlir files found in {models_dir}", file=sys.stderr)
