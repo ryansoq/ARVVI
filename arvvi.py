@@ -102,13 +102,14 @@ class RVVAnalyzer:
         self.objdump_path = objdump_path
         self.functions = functions  # List of function names to analyze
         self.instruction_stats = defaultdict(int)
+        self.section_stats = defaultdict(int)  # Track RVV instructions per section
         self.total_instructions = 0
         self.rvv_instructions = 0
 
     def run_objdump(self, binary_path):
         """Run objdump on the binary file"""
         try:
-            cmd = [self.objdump_path, '-d']
+            cmd = [self.objdump_path, '-D']  # Use -D to disassemble ALL sections
 
             # Add --disassemble=<function> for each specified function
             if self.functions:
@@ -131,11 +132,19 @@ class RVVAnalyzer:
     def parse_disassembly(self, disassembly):
         """Parse objdump output and count RVV instructions"""
         lines = disassembly.split('\n')
+        current_section = 'unknown'
 
         for line in lines:
-            # Skip empty lines and headers
+            # Detect section headers
+            # Format: "Disassembly of section .text:"
+            section_match = re.match(r'Disassembly of section (.+):', line)
+            if section_match:
+                current_section = section_match.group(1)
+                continue
+
+            # Skip empty lines and file format headers
             line = line.strip()
-            if not line or line.startswith('Disassembly') or line.startswith('file format'):
+            if not line or line.startswith('file format'):
                 continue
 
             # Match instruction lines (format: address: bytes  instruction operands)
@@ -148,6 +157,7 @@ class RVVAnalyzer:
                 # Check if it's an RVV instruction
                 if self._is_rvv_instruction(instruction):
                     self.instruction_stats[instruction] += 1
+                    self.section_stats[current_section] += 1
                     self.rvv_instructions += 1
 
     def _is_rvv_instruction(self, instruction):
@@ -171,6 +181,15 @@ class RVVAnalyzer:
             percentage = (self.rvv_instructions / self.total_instructions) * 100
             print(f"RVV usage: {percentage:.2f}%")
 
+        # Print section distribution
+        if self.section_stats:
+            print(f"\nRVV Instructions by Section:")
+            print(f"{'-'*60}")
+            sorted_sections = sorted(self.section_stats.items(), key=lambda x: x[1], reverse=True)
+            for section, count in sorted_sections:
+                percentage = (count / self.rvv_instructions) * 100 if self.rvv_instructions > 0 else 0
+                print(f"{section:30s}: {count:6d} ({percentage:5.1f}%)")
+
         print(f"\nRVV Instruction Distribution:")
         print(f"{'-'*60}")
 
@@ -185,7 +204,8 @@ class RVVAnalyzer:
         return {
             'total_instructions': self.total_instructions,
             'rvv_instructions': self.rvv_instructions,
-            'instruction_stats': dict(self.instruction_stats)
+            'instruction_stats': dict(self.instruction_stats),
+            'section_stats': dict(self.section_stats)
         }
 
     def save_json(self, output_path, model_name=None):
