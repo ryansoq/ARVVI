@@ -98,9 +98,10 @@ class RVVAnalyzer:
         r'\bvsetvl\b', r'\bvsetvli\b', r'\bvsetivli\b',
     ]
 
-    def __init__(self, objdump_path=DEFAULT_OBJDUMP, functions=None):
+    def __init__(self, objdump_path=DEFAULT_OBJDUMP, functions=None, sections=None):
         self.objdump_path = objdump_path
         self.functions = functions  # List of function names to analyze
+        self.sections = sections  # List of sections to analyze
         self.instruction_stats = defaultdict(int)
         self.section_stats = defaultdict(int)  # Track RVV instructions per section
         self.total_instructions = 0
@@ -110,6 +111,12 @@ class RVVAnalyzer:
         """Run objdump on the binary file"""
         try:
             cmd = [self.objdump_path, '-D']  # Use -D to disassemble ALL sections
+
+            # Add -j <section> for each specified section (for speed optimization)
+            if self.sections:
+                for section in self.sections:
+                    cmd.append('-j')
+                    cmd.append(section)
 
             # Add --disassemble=<function> for each specified function
             if self.functions:
@@ -229,6 +236,8 @@ def main():
 Examples:
   %(prog)s /models/mobilenetV1/OUTPUT/output.adx
   %(prog)s /models/mobilenetV1/OUTPUT/output.adx -o stats.json
+  %(prog)s /models/mobilenetV1/OUTPUT/output.adx --section .data
+  %(prog)s /models/mobilenetV1/OUTPUT/output.adx --section .data,.text
   %(prog)s /models/mobilenetV1/OUTPUT/output.adx --function main
   %(prog)s /models/mobilenetV1/OUTPUT/output.adx --function main,inference,matmul
   %(prog)s /models/mobilenetV1/OUTPUT/output.adx --objdump /path/to/objdump
@@ -241,6 +250,8 @@ Examples:
     parser.add_argument('-m', '--model', help='Model name for the report')
     parser.add_argument('--objdump', default=DEFAULT_OBJDUMP,
                        help=f'Path to objdump (default: {DEFAULT_OBJDUMP})')
+    parser.add_argument('-s', '--section', dest='sections',
+                       help='Analyze specific section(s) only (comma-separated). Example: .data or .data,.text (faster for IREE VMFB)')
     parser.add_argument('-f', '--function', dest='functions',
                        help='Analyze specific function(s) only (comma-separated). Example: main,inference')
     parser.add_argument('-v', '--visualize', action='store_true',
@@ -265,15 +276,24 @@ Examples:
     if args.functions:
         functions = [f.strip() for f in args.functions.split(',')]
 
+    # Parse section list if provided
+    sections = None
+    if args.sections:
+        sections = [s.strip() for s in args.sections.split(',')]
+
     # Run analysis
     print(f"Analyzing binary: {args.binary}")
     print(f"Using objdump: {args.objdump}")
+    if sections:
+        print(f"Analyzing section(s): {', '.join(sections)} (faster mode)")
+    else:
+        print("Analyzing all sections")
     if functions:
         print(f"Analyzing function(s): {', '.join(functions)}")
     else:
         print("Analyzing all functions")
 
-    analyzer = RVVAnalyzer(objdump_path=args.objdump, functions=functions)
+    analyzer = RVVAnalyzer(objdump_path=args.objdump, functions=functions, sections=sections)
 
     print("\nRunning objdump...")
     disassembly = analyzer.run_objdump(args.binary)
