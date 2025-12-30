@@ -98,8 +98,9 @@ class RVVAnalyzer:
         r'\bvsetvl\b', r'\bvsetvli\b', r'\bvsetivli\b',
     ]
 
-    def __init__(self, objdump_path=DEFAULT_OBJDUMP):
+    def __init__(self, objdump_path=DEFAULT_OBJDUMP, functions=None):
         self.objdump_path = objdump_path
+        self.functions = functions  # List of function names to analyze
         self.instruction_stats = defaultdict(int)
         self.total_instructions = 0
         self.rvv_instructions = 0
@@ -107,7 +108,15 @@ class RVVAnalyzer:
     def run_objdump(self, binary_path):
         """Run objdump on the binary file"""
         try:
-            cmd = [self.objdump_path, '-d', binary_path]
+            cmd = [self.objdump_path, '-d']
+
+            # Add --disassemble=<function> for each specified function
+            if self.functions:
+                for func in self.functions:
+                    cmd.append(f'--disassemble={func}')
+
+            cmd.append(binary_path)
+
             result = subprocess.run(cmd, capture_output=True, text=True, check=True)
             return result.stdout
         except subprocess.CalledProcessError as e:
@@ -200,6 +209,8 @@ def main():
 Examples:
   %(prog)s /models/mobilenetV1/OUTPUT/output.adx
   %(prog)s /models/mobilenetV1/OUTPUT/output.adx -o stats.json
+  %(prog)s /models/mobilenetV1/OUTPUT/output.adx --function main
+  %(prog)s /models/mobilenetV1/OUTPUT/output.adx --function main,inference,matmul
   %(prog)s /models/mobilenetV1/OUTPUT/output.adx --objdump /path/to/objdump
   %(prog)s /models/mobilenetV1/OUTPUT/output.adx --visualize
         """
@@ -210,6 +221,8 @@ Examples:
     parser.add_argument('-m', '--model', help='Model name for the report')
     parser.add_argument('--objdump', default=DEFAULT_OBJDUMP,
                        help=f'Path to objdump (default: {DEFAULT_OBJDUMP})')
+    parser.add_argument('-f', '--function', dest='functions',
+                       help='Analyze specific function(s) only (comma-separated). Example: main,inference')
     parser.add_argument('-v', '--visualize', action='store_true',
                        help='Generate visualization charts')
 
@@ -227,11 +240,20 @@ Examples:
         # Try to extract from path
         model_name = binary_path.parent.parent.name if binary_path.parent.parent.name else binary_path.stem
 
+    # Parse function list if provided
+    functions = None
+    if args.functions:
+        functions = [f.strip() for f in args.functions.split(',')]
+
     # Run analysis
     print(f"Analyzing binary: {args.binary}")
     print(f"Using objdump: {args.objdump}")
+    if functions:
+        print(f"Analyzing function(s): {', '.join(functions)}")
+    else:
+        print("Analyzing all functions")
 
-    analyzer = RVVAnalyzer(objdump_path=args.objdump)
+    analyzer = RVVAnalyzer(objdump_path=args.objdump, functions=functions)
 
     print("\nRunning objdump...")
     disassembly = analyzer.run_objdump(args.binary)
