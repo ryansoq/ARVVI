@@ -80,28 +80,74 @@ def print_comparison(stats_dict):
         print(row)
 
 
+def scan_json_files(models_dir):
+    """
+    Scan directory recursively for all *_rvv_stats.json files
+
+    Args:
+        models_dir: Root directory to scan
+
+    Returns:
+        List of JSON file paths found
+    """
+    models_path = Path(models_dir)
+    if not models_path.exists():
+        print(f"Error: Directory not found: {models_dir}", file=sys.stderr)
+        return []
+
+    # Find all *_rvv_stats.json files recursively
+    json_files = list(models_path.rglob('*_rvv_stats.json'))
+
+    if not json_files:
+        print(f"No *_rvv_stats.json files found in {models_dir}", file=sys.stderr)
+        return []
+
+    print(f"Found {len(json_files)} JSON file(s) to compare\n")
+    for json_file in json_files:
+        print(f"  - {json_file}")
+
+    return [str(f) for f in json_files]
+
+
 def main():
     parser = argparse.ArgumentParser(
         description='ARVVI Compare - Compare RVV instruction usage across multiple models',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  %(prog)s model1.json model2.json model3.json
-  %(prog)s *.json --visualize
-  %(prog)s bev.json mobilenet.json -o comparison.png
+  Compare specific files:
+    %(prog)s model1.json model2.json model3.json
+    %(prog)s *.json --visualize
+    %(prog)s bev.json mobilenet.json -o comparison.png
+
+  Scan directory for all JSON files:
+    %(prog)s --scan models/
+    %(prog)s --scan ../AutoIREE_zoo/models/ --visualize
         """
     )
 
-    parser.add_argument('json_files', nargs='+', help='JSON files containing statistics')
+    parser.add_argument('json_files', nargs='*', help='JSON files containing statistics (not used with --scan)')
+    parser.add_argument('--scan', dest='scan_dir', metavar='DIR',
+                       help='Scan directory recursively for all *_rvv_stats.json files')
     parser.add_argument('-v', '--visualize', action='store_true',
                        help='Generate comparison visualization')
     parser.add_argument('-o', '--output', help='Output directory for visualizations (default: current directory)')
 
     args = parser.parse_args()
 
+    # Check if using scan mode
+    if args.scan_dir:
+        json_files = scan_json_files(args.scan_dir)
+        if not json_files:
+            sys.exit(1)
+    else:
+        if not args.json_files:
+            parser.error("Either provide JSON files or use --scan <directory>")
+        json_files = args.json_files
+
     # Load all statistics
     stats_dict = {}
-    for json_file in args.json_files:
+    for json_file in json_files:
         path = Path(json_file)
         if not path.exists():
             print(f"Warning: File not found: {json_file}", file=sys.stderr)
