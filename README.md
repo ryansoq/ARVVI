@@ -1,4 +1,4 @@
-# ARVVI - AndeSight RISC-V Vector Instruction Analyzer
+# ARVVI - Analyzer for RISC-V Vector Instructions
 
 ARVVI 是一個用於分析 RISC-V 二進位檔案中 Vector 指令使用情況的工具。它可以幫助硬體設計人員和軟體開發者了解 AI 模型在 RISC-V 架構上的向量指令使用模式，從而優化硬體設計和軟體實現。
 

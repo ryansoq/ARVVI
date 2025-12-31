@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-ARVVI - AndeSight RISC-V Vector Instruction Analyzer
+ARVVI - Analyzer for RISC-V Vector Instructions
 Analyzes RVV instruction usage in RISC-V binaries for AI model optimization
 """
 
@@ -335,7 +335,7 @@ def scan_models(models_dir, objdump_path, sections=None, visualize=False):
 
 def main():
     parser = argparse.ArgumentParser(
-        description='ARVVI - AndeSight RISC-V Vector Instruction Analyzer',
+        description='ARVVI - Analyzer for RISC-V Vector Instructions',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
