@@ -1,0 +1,51 @@
+name: ARVVI Test Suite
+
+on:
+  push:
+    branches: [ main, develop, 'claude/**' ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.9'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run unit tests
+      run: |
+        python -m pytest tests/ -v
+
+    - name: Test single file analysis
+      run: |
+        # Test with sample binary (if exists)
+        if [ -f "tests/sample.adx" ]; then
+          python arvvi.py tests/sample.adx -o test_output.json
+        fi
+
+    - name: Test scan functionality
+      run: |
+        # Test scan mode (dry run)
+        python arvvi.py --help | grep -q "scan"
+
+    - name: Verify tool integrity
+      run: |
+        python arvvi.py --help
+        python arvvi_compare.py --help
+
+    - name: Check code style
+      run: |
+        pip install flake8
+        flake8 arvvi.py arvvi_compare.py arvvi_visualizer.py --max-line-length=120 --ignore=E501,W503

@@ -133,7 +133,7 @@ class RVVAnalyzer:
             sys.exit(1)
         except FileNotFoundError:
             print(f"Error: objdump not found at {self.objdump_path}", file=sys.stderr)
-            print(f"Please check your toolchain installation", file=sys.stderr)
+            print("Please check your toolchain installation", file=sys.stderr)
             sys.exit(1)
 
     def parse_disassembly(self, disassembly):
@@ -190,15 +190,15 @@ class RVVAnalyzer:
 
         # Print section distribution
         if self.section_stats:
-            print(f"\nRVV Instructions by Section:")
-            print(f"{'-'*60}")
+            print("\nRVV Instructions by Section:")
+            print("-" * 60)
             sorted_sections = sorted(self.section_stats.items(), key=lambda x: x[1], reverse=True)
             for section, count in sorted_sections:
                 percentage = (count / self.rvv_instructions) * 100 if self.rvv_instructions > 0 else 0
                 print(f"{section:30s}: {count:6d} ({percentage:5.1f}%)")
 
-        print(f"\nRVV Instruction Distribution:")
-        print(f"{'-'*60}")
+        print("\nRVV Instruction Distribution:")
+        print("-" * 60)
 
         # Sort by count (descending)
         sorted_stats = sorted(self.instruction_stats.items(), key=lambda x: x[1], reverse=True)
@@ -302,9 +302,9 @@ def scan_models(models_dir, objdump_path, sections=None, visualize=False):
                 try:
                     from arvvi_visualizer import visualize_statistics
                     visualize_statistics(analyzer.get_statistics(), model_basename, str(output_dir))
-                    print(f"  ✅ Visualization saved")
+                    print("  ✅ Visualization saved")
                 except ImportError:
-                    print(f"  ⚠️  matplotlib not installed, skipping visualization")
+                    print("  ⚠️  matplotlib not installed, skipping visualization")
 
             results.append({
                 'model': model_basename,
@@ -322,13 +322,13 @@ def scan_models(models_dir, objdump_path, sections=None, visualize=False):
             continue
 
     # Print summary
-    print(f"\n{'='*60}")
-    print(f"Batch Analysis Summary")
-    print(f"{'='*60}")
+    print("\n" + "=" * 60)
+    print("Batch Analysis Summary")
+    print("=" * 60)
     print(f"Total models found:    {len(mlir_files)}")
     print(f"Successfully analyzed: {analyzed_count}")
     print(f"Skipped:              {skipped_count}")
-    print(f"{'='*60}\n")
+    print("=" * 60 + "\n")
 
     return results
 
@@ -353,17 +353,17 @@ Examples:
 
     parser.add_argument('binary', nargs='?', help='Path to the binary file to analyze (not used with --scan)')
     parser.add_argument('--scan', dest='scan_dir', metavar='DIR',
-                       help='Scan directory for models and analyze all .adx files (batch mode)')
+                        help='Scan directory for models and analyze all .adx files (batch mode)')
     parser.add_argument('-o', '--output', help='Output JSON file for statistics')
     parser.add_argument('-m', '--model', help='Model name for the report')
     parser.add_argument('--objdump', default=DEFAULT_OBJDUMP,
-                       help=f'Path to objdump (default: {DEFAULT_OBJDUMP})')
+                        help=f'Path to objdump (default: {DEFAULT_OBJDUMP})')
     parser.add_argument('-s', '--section', dest='sections',
-                       help='Analyze specific section(s) only (comma-separated). Example: .data or .data,.text (faster for IREE VMFB)')
+                        help='Analyze specific section(s) only (comma-separated). Example: .data or .data,.text (faster for IREE VMFB)')
     parser.add_argument('-f', '--function', dest='functions',
-                       help='Analyze specific function(s) only (comma-separated). Example: main,inference')
+                        help='Analyze specific function(s) only (comma-separated). Example: main,inference')
     parser.add_argument('-v', '--visualize', action='store_true',
-                       help='Generate visualization charts')
+                        help='Generate visualization charts')
 
     args = parser.parse_args()
 

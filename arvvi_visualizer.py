@@ -68,7 +68,7 @@ def visualize_statistics(stats, model_name='Unknown', output_dir='.'):
 
     colors_pie = plt.cm.Set3(range(len(top_10_names)))
     wedges, texts, autotexts = ax2.pie(top_10_counts, labels=top_10_names, autopct='%1.1f%%',
-                                         colors=colors_pie, startangle=90)
+                                       colors=colors_pie, startangle=90)
 
     # Make percentage text bold
     for autotext in autotexts:
@@ -154,7 +154,7 @@ def compare_models(stats_dict, output_dir='.'):
     instruction_totals = {}
     for instr in all_instructions:
         total = sum(stats.get('instruction_stats', {}).get(instr, 0)
-                   for stats in stats_dict.values())
+                    for stats in stats_dict.values())
         instruction_totals[instr] = total
 
     # Sort and take top 15
@@ -173,7 +173,7 @@ def compare_models(stats_dict, output_dir='.'):
         instruction_stats = stats.get('instruction_stats', {})
         counts = [instruction_stats.get(instr, 0) for instr in top_instr_names]
 
-        offset = (i - len(model_names)/2) * width + width/2
+        offset = (i - len(model_names) / 2) * width + width / 2
         ax.bar([pos + offset for pos in x], counts, width, label=model_name)
 
     ax.set_xlabel('RVV Instructions', fontweight='bold')
