@@ -22,9 +22,9 @@ def load_stats(json_path):
 
 def print_comparison(stats_dict):
     """Print comparison table"""
-    print(f"\n{'='*80}")
-    print(f"RVV Instruction Usage Comparison")
-    print(f"{'='*80}\n")
+    print("\n" + "=" * 80)
+    print("RVV Instruction Usage Comparison")
+    print("=" * 80 + "\n")
 
     # Print summary statistics
     print(f"{'Model':<20} {'Total Instr':<15} {'RVV Instr':<15} {'RVV %':<10}")
@@ -57,9 +57,9 @@ def print_comparison(stats_dict):
     sorted_instructions = sorted(instruction_totals.items(), key=lambda x: x[1], reverse=True)
 
     # Print top instructions
-    print(f"\n{'='*80}")
-    print(f"Top RVV Instructions Across All Models")
-    print(f"{'='*80}\n")
+    print("\n" + "=" * 80)
+    print("Top RVV Instructions Across All Models")
+    print("=" * 80 + "\n")
 
     # Header
     model_names = list(stats_dict.keys())
@@ -128,9 +128,9 @@ Examples:
 
     parser.add_argument('json_files', nargs='*', help='JSON files containing statistics (not used with --scan)')
     parser.add_argument('--scan', dest='scan_dir', metavar='DIR',
-                       help='Scan directory recursively for all *_rvv_stats.json files')
+                        help='Scan directory recursively for all *_rvv_stats.json files')
     parser.add_argument('-v', '--visualize', action='store_true',
-                       help='Generate comparison visualization')
+                        help='Generate comparison visualization')
     parser.add_argument('-o', '--output', help='Output directory for visualizations (default: current directory)')
 
     args = parser.parse_args()
