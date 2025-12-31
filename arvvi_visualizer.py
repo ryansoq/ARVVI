@@ -223,6 +223,9 @@ def visualize_instruction_breakdown_by_model(stats_dict, output_dir='.', top_n=2
     # Sort by total count and take top N
     sorted_instructions = sorted(instruction_totals.items(), key=lambda x: x[1], reverse=True)
     top_instructions = sorted_instructions[:top_n]
+
+    # Reverse order so largest is at top
+    top_instructions = list(reversed(top_instructions))
     top_instr_names = [instr for instr, _ in top_instructions]
     top_instr_totals = [total for _, total in top_instructions]
 
@@ -230,8 +233,8 @@ def visualize_instruction_breakdown_by_model(stats_dict, output_dir='.', top_n=2
     model_names = list(stats_dict.keys())
     colors = plt.cm.tab20(range(len(model_names)))
 
-    # Create figure
-    fig, ax = plt.subplots(figsize=(14, max(10, top_n * 0.4)))
+    # Create figure with more space for y-axis labels
+    fig, ax = plt.subplots(figsize=(16, max(10, top_n * 0.5)))
 
     # Build stacked bars
     left_positions = [0] * len(top_instr_names)
@@ -258,31 +261,34 @@ def visualize_instruction_breakdown_by_model(stats_dict, output_dir='.', top_n=2
     # Add total count labels at the end of each bar
     for i, (instr_name, total) in enumerate(zip(top_instr_names, top_instr_totals)):
         ax.text(total, i, f'  {total:,}',
-                va='center', fontsize=9, fontweight='bold')
+                va='center', fontsize=10, fontweight='bold')
 
     # Formatting
     ax.set_yticks(range(len(top_instr_names)))
-    ax.set_yticklabels(top_instr_names, fontsize=10)
+    ax.set_yticklabels(top_instr_names, fontsize=11)
     ax.set_xlabel('Total Instruction Count', fontweight='bold', fontsize=12)
     ax.set_title(f'Top {top_n} RVV Instructions - Usage Breakdown by Model',
                  fontsize=14, fontweight='bold', pad=20)
 
     # Legend - only show models that contributed
-    ax.legend(bbox_to_anchor=(1.02, 1), loc='upper left',
+    ax.legend(bbox_to_anchor=(1.15, 1), loc='upper left',
               fontsize=9, framealpha=0.9)
 
     ax.grid(axis='x', alpha=0.3, linestyle='--')
     ax.set_axisbelow(True)
 
-    # Add instruction rank numbers
+    # Add instruction rank numbers (reversed so #1 is at top)
     for i in range(len(top_instr_names)):
-        ax.text(-max(top_instr_totals) * 0.02, i, f'#{i + 1}',
-                ha='right', va='center', fontsize=8, color='gray')
+        rank = len(top_instr_names) - i
+        ax.text(-max(top_instr_totals) * 0.02, i, f'#{rank}',
+                ha='right', va='center', fontsize=9, color='gray', fontweight='bold')
 
-    plt.tight_layout()
+    # Adjust layout to prevent label overlap
+    plt.tight_layout(rect=[0, 0, 0.95, 1])
 
     output_file = output_path / 'instruction_breakdown_by_model.png'
     plt.savefig(output_file, dpi=300, bbox_inches='tight')
+    plt.close()
     print(f"Instruction breakdown chart saved to: {output_file}")
 
 
