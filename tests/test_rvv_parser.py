@@ -66,7 +66,8 @@ Disassembly of section .data:
     analyzer.parse_disassembly(sample_disassembly)
 
     # Check statistics
-    assert analyzer.total_instructions == 8
+    # Total: 2 instructions in .text (auipc, addi) + 5 RVV in .data = 7
+    assert analyzer.total_instructions == 7
     assert analyzer.rvv_instructions == 5
     assert analyzer.instruction_stats['vsetvli'] == 1
     assert analyzer.instruction_stats['vle32'] == 2
@@ -74,7 +75,9 @@ Disassembly of section .data:
     assert analyzer.instruction_stats['vse32'] == 1
 
     # Check section tracking
+    # .data section contains all 5 RVV instructions
     assert analyzer.section_stats['.data'] == 5
+    # .text section contains 0 RVV instructions (auipc and addi are not RVV)
     assert analyzer.section_stats.get('.text', 0) == 0
 
 
