@@ -761,6 +761,333 @@ VLEN = 256 bits（從 vlenb CSR 讀取）
 → 每週期處理 4 個 32-bit 元素
 ```
 
+#### 5. 如何從 RVV 指令使用模式推測 ALU 寬度
+
+**關鍵觀念：ALU 寬度是不可見的硬體參數**
+
+RVV 指令集 **刻意不暴露** ALU 寬度，讓不同硬體實作有彈性。但我們可以透過多種方法推測：
+
+##### 方法 1：效能計數器測量（最準確）
+
+**需要工具：**
+- Performance counter (perf, 或 vendor 提供的 profiler)
+- 能跑在硬體上的測試程式
+
+**測試步驟：**
+```assembly
+# 測試程式 1: LMUL=1
+vsetvli t0, a0, e32, m1    # 設定 LMUL=1
+loop1:
+    vle32.v  v1, (a1)
+    vle32.v  v2, (a2)
+    vadd.vv  v3, v1, v2
+    vse32.v  v3, (a3)
+    addi a1, a1, 32        # 移動 8 個元素 (32 bytes)
+    addi a2, a2, 32
+    addi a3, a3, 32
+    bnez a0, loop1
+
+# 測量: 總 cycle 數 C1
+
+# 測試程式 2: LMUL=2
+vsetvli t0, a0, e32, m2    # 設定 LMUL=2
+loop2:
+    vle32.v  v4, (a1)
+    vle32.v  v8, (a2)
+    vadd.vv  v12, v4, v8
+    vse32.v  v12, (a3)
+    addi a1, a1, 64        # 移動 16 個元素 (64 bytes)
+    addi a2, a2, 64
+    addi a3, a3, 64
+    bnez a0, loop2
+
+# 測量: 總 cycle 數 C2
+```
+
+**分析結果：**
+```python
+# 假設測量結果
+# VLEN = 256 bits, SEW = 32 bits
+
+# LMUL=1: 處理 8 個元素，耗時 10 cycles
+# LMUL=2: 處理 16 個元素，耗時 20 cycles
+
+# 推論 1: 週期數線性成長
+# → ALU 可能按 LMUL 分批處理
+
+# 如果 LMUL=1 的 10 cycles 中:
+#   - Load v1: 2 cycles
+#   - Load v2: 2 cycles
+#   - Add:     2 cycles
+#   - Store:   2 cycles
+#   - 其他:     2 cycles
+
+# 推論 Add 部分:
+# 2 cycles 處理 8 個元素 → 每 cycle 4 個元素
+# → ALU 寬度 = 4 × 32 = 128 bits
+```
+
+##### 方法 2：從 ARVVI 統計結果推測（間接方法）
+
+**觀察指令使用模式：**
+
+假設你用 ARVVI 分析後得到：
+```json
+{
+  "instruction_stats": {
+    "vsetvli": 45,
+    "vsetivli": 12,
+    "vle32": 892,
+    "vse32": 654,
+    "vfmacc": 1247,
+    "vfadd": 432
+  }
+}
+```
+
+**推論步驟 1：觀察 vsetvl 指令的參數**
+```bash
+# 用 objdump 查看實際的 vsetvli 指令
+riscv64-elf-objdump -D model.adx | grep vsetvli
+
+輸出範例：
+  20000: cd027057  vsetvli  zero,zero,e32,m1,ta,ma
+  20100: cd047057  vsetvli  zero,zero,e32,m2,ta,ma
+  20200: cd067057  vsetvli  zero,zero,e32,m4,ta,ma
+```
+
+**發現**:
+- 大部分使用 **m1** (LMUL=1)
+- 少數使用 m2, m4
+
+**推論**:
+```
+如果編譯器選擇 LMUL=1，可能因為:
+1. 硬體 ALU 寬度 = VLEN → LMUL>1 不會更快
+2. 或記憶體頻寬限制 → LMUL>1 會卡在記憶體存取
+
+如果編譯器選擇 LMUL=4，可能因為:
+1. 硬體有多個並行 ALU
+2. 記憶體頻寬足夠
+3. 想減少迴圈次數
+```
+
+**推論步驟 2：觀察 Load/Store vs Compute 的比例**
+```python
+load_store_count = vle32 + vse32 = 892 + 654 = 1546
+compute_count = vfmacc + vfadd = 1247 + 432 = 1679
+
+ratio = load_store / compute = 1546 / 1679 ≈ 0.92
+```
+
+**推論**:
+```
+Load/Store 和 Compute 數量接近:
+→ 可能有記憶體頻寬瓶頸
+→ ALU 可能處於等待資料的狀態
+→ 即使有大 ALU，也因記憶體限制無法發揮
+
+如果 ratio < 0.5 (Compute 多很多):
+→ 可能有寄存器再用 (register reuse)
+→ ALU 較忙，記憶體不是瓶頸
+```
+
+**推論步驟 3：觀察複雜指令的使用**
+```json
+"vfmacc": 1247   // Fused Multiply-Accumulate
+"vfmul":  123    // 單純乘法
+"vfadd":  432    // 單純加法
+```
+
+**推論**:
+```
+大量使用 vfmacc (FMA):
+→ 編譯器知道硬體有 FMA 單元
+→ 硬體 ALU 較複雜，支援融合運算
+→ 可能每個 lane 都有獨立的 FMA
+
+如果硬體沒有 FMA，編譯器會用:
+vfmul + vfadd (分開的指令)
+```
+
+##### 方法 3：廠商規格文件（最直接）
+
+**查詢方向：**
+```
+Andes AX45MP 規格文件關鍵字:
+- "Vector ALU width"
+- "Vector execution lanes"
+- "Vector processing elements"
+- "VLEN implementation"
+
+範例文件內容:
+┌─────────────────────────────────────┐
+│ Andes AX45MP Vector Unit Spec      │
+├─────────────────────────────────────┤
+│ VLEN:        256 bits               │
+│ ALU Width:   128 bits (4 lanes)    │
+│ FPU Lanes:   4 × FP32 FMA units    │
+│ Memory:      128-bit interface      │
+└─────────────────────────────────────┘
+
+從文件直接得知:
+→ 4 個並行的 32-bit lane
+→ 每個 lane 有 FMA 單元
+→ 記憶體介面也是 128-bit
+```
+
+##### 方法 4：比較不同 SEW 的效能（進階）
+
+**測試程式：**
+```assembly
+# 測試 1: SEW=32
+vsetvli t0, a0, e32, m1
+vadd.vv v1, v2, v3
+# 測量 cycles: C32
+
+# 測試 2: SEW=64
+vsetvli t0, a0, e64, m1
+vadd.vv v1, v2, v3
+# 測量 cycles: C64
+
+# 測試 3: SEW=16
+vsetvli t0, a0, e16, m1
+vadd.vv v1, v2, v3
+# 測量 cycles: C16
+```
+
+**分析結果：**
+```python
+# 假設 VLEN = 256 bits
+
+# 結果 A: 所有 SEW 都是相同 cycles
+# e32: 2 cycles (8 個元素)
+# e64: 2 cycles (4 個元素)
+# e16: 2 cycles (16 個元素)
+# → ALU 是 256-bit 全寬，不管 SEW 都用滿
+
+# 結果 B: cycles 與元素數成比例
+# e32: 2 cycles (8 個元素) → 4 elem/cycle
+# e64: 1 cycle (4 個元素) → 4 elem/cycle
+# e16: 4 cycles (16 個元素) → 4 elem/cycle
+# → ALU 固定每 cycle 處理 4 個元素（不管寬度）
+
+# 結果 C: cycles 與資料量成比例
+# e32: 2 cycles (32 bytes)
+# e64: 2 cycles (32 bytes)
+# e16: 1 cycle (32 bytes)
+# → 受記憶體頻寬限制（128-bit memory bus）
+```
+
+##### 方法 5：從編譯器生成的程式碼推測
+
+**觀察重點：**
+```assembly
+# IREE 生成的程式碼範例
+
+# 模式 A: 總是用 LMUL=1
+vsetvli t0, a0, e32, m1
+...
+# → 可能硬體 ALU = VLEN，LMUL>1 沒好處
+
+# 模式 B: 總是用 LMUL=8
+vsetvli t0, a0, e32, m8
+...
+# → 可能硬體有 8 個並行 ALU 或非常寬的 ALU
+
+# 模式 C: 混用 m1, m2, m4
+vsetvli t0, a0, e32, m1   # 小運算
+...
+vsetvli t0, a0, e32, m4   # 大運算
+...
+# → 編譯器在平衡效能和暫存器壓力
+```
+
+##### 實際案例分析
+
+**案例：分析 MobileNet 模型**
+
+使用 ARVVI 分析得到：
+```json
+{
+  "total_instructions": 8234,
+  "rvv_instructions": 7543,
+  "instruction_stats": {
+    "vsetvli": 156,
+    "vle32": 1247,
+    "vse32": 1089,
+    "vfmacc": 2456,
+    "vfadd": 892,
+    "vfmul": 234
+  }
+}
+```
+
+**分析步驟：**
+
+1. **觀察 FMA 使用率**
+   ```
+   vfmacc = 2456
+   vfmul + vfadd = 234 + 892 = 1126
+
+   FMA 使用率 = 2456 / (2456 + 1126) = 68.5%
+
+   推論: 硬體很可能有 FMA 單元
+   ```
+
+2. **檢查 vsetvli 實際參數**（需要 objdump）
+   ```bash
+   riscv64-elf-objdump -D mobilenet.adx | grep vsetvli | head -20
+
+   大部分是 e32, m1
+   → 可能 ALU 寬度 = VLEN
+   ```
+
+3. **計算理論 vs 實際比例**
+   ```
+   如果 VLEN = 256, SEW = 32, LMUL = 1:
+   VLMAX = 8 個元素
+
+   如果有 1247 次 vle32:
+   → 理論載入 1247 × 8 = 9976 個元素
+   → 約 39.9 KB 資料
+
+   對照模型大小和運算量 → 可推測迴圈次數
+   ```
+
+##### 總結：ALU 寬度推測的層次
+
+| 方法 | 準確度 | 難度 | 需要資源 |
+|------|--------|------|----------|
+| **Performance Counter** | ⭐⭐⭐⭐⭐ | 高 | 硬體、測試程式 |
+| **廠商文件** | ⭐⭐⭐⭐⭐ | 低 | 取得文件 |
+| **SEW 效能比較** | ⭐⭐⭐⭐ | 中 | 硬體、測試程式 |
+| **LMUL 效能比較** | ⭐⭐⭐⭐ | 中 | 硬體、測試程式 |
+| **指令統計分析** | ⭐⭐⭐ | 低 | ARVVI + objdump |
+| **編譯器模式觀察** | ⭐⭐ | 低 | ARVVI + objdump |
+
+**實務建議：**
+```
+1. 先查廠商文件（如果有的話）
+2. 用 ARVVI 分析指令模式，建立初步假設
+3. 寫小型 benchmark 在硬體上驗證
+4. 使用 performance counter 精確測量
+```
+
+**ARVVI 能幫助你：**
+- ✅ 觀察編譯器選擇的 LMUL 模式
+- ✅ 統計不同指令類型的使用頻率
+- ✅ 分析 Load/Store vs Compute 的平衡
+- ✅ 找出效能熱點（最常用的指令）
+
+**ARVVI 無法直接告訴你：**
+- ❌ 確切的 ALU 寬度（需要效能測試）
+- ❌ 實際執行時間（需要在硬體上跑）
+- ❌ 記憶體頻寬（需要硬體規格）
+
+但透過 ARVVI 的統計資料 + objdump 的詳細輸出 + 硬體測試，
+你可以完整了解 RVV 硬體的實作特性！
+
 #### 4. 記憶體頻寬需求
 
 **LMUL 對記憶體頻寬的影響：**
