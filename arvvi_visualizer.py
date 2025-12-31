@@ -258,11 +258,6 @@ def visualize_instruction_breakdown_by_model(stats_dict, output_dir='.', top_n=2
         # Update left positions for next stack
         left_positions = [left + count for left, count in zip(left_positions, model_counts)]
 
-    # Add total count labels at the end of each bar
-    for i, (instr_name, total) in enumerate(zip(top_instr_names, top_instr_totals)):
-        ax.text(total, i, f'  {total:,}',
-                va='center', fontsize=10, fontweight='bold')
-
     # Formatting
     ax.set_yticks(range(len(top_instr_names)))
     ax.set_yticklabels(top_instr_names, fontsize=11)
@@ -270,18 +265,21 @@ def visualize_instruction_breakdown_by_model(stats_dict, output_dir='.', top_n=2
     ax.set_title(f'Top {top_n} RVV Instructions - Usage Breakdown by Model',
                  fontsize=14, fontweight='bold', pad=20)
 
+    # Extend x-axis to make room for labels
+    max_total = max(top_instr_totals)
+    ax.set_xlim(0, max_total * 1.12)  # Add 12% space for labels
+
+    # Add total count labels at the end of each bar
+    for i, (instr_name, total) in enumerate(zip(top_instr_names, top_instr_totals)):
+        ax.text(total, i, f'  {total:,}',
+                va='center', fontsize=10, fontweight='bold')
+
     # Legend - only show models that contributed
     ax.legend(bbox_to_anchor=(1.15, 1), loc='upper left',
               fontsize=9, framealpha=0.9)
 
     ax.grid(axis='x', alpha=0.3, linestyle='--')
     ax.set_axisbelow(True)
-
-    # Add instruction rank numbers (reversed so #1 is at top)
-    for i in range(len(top_instr_names)):
-        rank = len(top_instr_names) - i
-        ax.text(-max(top_instr_totals) * 0.02, i, f'#{rank}',
-                ha='right', va='center', fontsize=9, color='gray', fontweight='bold')
 
     # Adjust layout to prevent label overlap
     plt.tight_layout(rect=[0, 0, 0.95, 1])
