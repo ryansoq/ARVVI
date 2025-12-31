@@ -3,3 +3,6 @@
 
 # For visualization
 matplotlib>=3.5.0
+
+# For testing
+pytest>=7.0.0
