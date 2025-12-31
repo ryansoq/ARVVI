@@ -20,8 +20,21 @@ def load_stats(json_path):
         return None
 
 
-def print_comparison(stats_dict):
-    """Print comparison table"""
+def print_comparison(stats_dict, markdown=False):
+    """Print comparison table
+
+    Args:
+        stats_dict: Dictionary mapping model names to their statistics
+        markdown: If True, output in markdown format for README.md
+    """
+    if markdown:
+        print_comparison_markdown(stats_dict)
+    else:
+        print_comparison_text(stats_dict)
+
+
+def print_comparison_text(stats_dict):
+    """Print comparison table in text format"""
     print("\n" + "=" * 80)
     print("RVV Instruction Usage Comparison")
     print("=" * 80 + "\n")
@@ -80,6 +93,71 @@ def print_comparison(stats_dict):
         print(row)
 
 
+def print_comparison_markdown(stats_dict):
+    """Print comparison table in markdown format for README.md"""
+
+    print("\n## RVV Instruction Usage Comparison\n")
+
+    # Summary table
+    print("### Model Summary\n")
+    print("| Model | Total Instructions | RVV Instructions | RVV % |")
+    print("|-------|-------------------:|-----------------:|------:|")
+
+    for model_name, data in stats_dict.items():
+        stats = data.get('statistics', {})
+        total = stats.get('total_instructions', 0)
+        rvv = stats.get('rvv_instructions', 0)
+        percentage = (rvv / total * 100) if total > 0 else 0
+
+        print(f"| {model_name} | {total:,} | {rvv:,} | {percentage:.2f}% |")
+
+    # Collect instruction statistics
+    all_instructions = set()
+    for data in stats_dict.values():
+        stats = data.get('statistics', {})
+        all_instructions.update(stats.get('instruction_stats', {}).keys())
+
+    instruction_totals = {}
+    for instr in all_instructions:
+        total = 0
+        for data in stats_dict.values():
+            stats = data.get('statistics', {})
+            total += stats.get('instruction_stats', {}).get(instr, 0)
+        instruction_totals[instr] = total
+
+    sorted_instructions = sorted(instruction_totals.items(), key=lambda x: x[1], reverse=True)
+
+    # Top instructions table
+    print("\n### Top 20 RVV Instructions Across All Models\n")
+
+    model_names = list(stats_dict.keys())
+
+    # Header
+    header = "| Instruction | Total |"
+    for model_name in model_names:
+        header += f" {model_name} |"
+    print(header)
+
+    # Alignment row
+    align = "|-------------|------:|"
+    for _ in model_names:
+        align += "------:|"
+    print(align)
+
+    # Data rows
+    for instr, total_count in sorted_instructions[:20]:
+        row = f"| **{instr}** | **{total_count:,}** |"
+        for model_name in model_names:
+            data = stats_dict[model_name]
+            stats = data.get('statistics', {})
+            count = stats.get('instruction_stats', {}).get(instr, 0)
+            if count > 0:
+                row += f" {count:,} |"
+            else:
+                row += " - |"
+        print(row)
+
+
 def scan_json_files(models_dir):
     """
     Scan directory recursively for all *_rvv_stats.json files
@@ -123,6 +201,7 @@ Examples:
   Scan directory for all JSON files:
     %(prog)s --scan models/
     %(prog)s --scan ../AutoIREE_zoo/models/ --visualize
+    %(prog)s --scan models/ --markdown > results.md
         """
     )
 
@@ -132,6 +211,8 @@ Examples:
     parser.add_argument('-v', '--visualize', action='store_true',
                         help='Generate comparison visualization')
     parser.add_argument('-o', '--output', help='Output directory for visualizations (default: current directory)')
+    parser.add_argument('--markdown', action='store_true',
+                        help='Output in markdown format for README.md')
 
     args = parser.parse_args()
 
@@ -166,7 +247,7 @@ Examples:
         print("Warning: Only one model loaded. Need at least 2 models for comparison.")
 
     # Print comparison
-    print_comparison(stats_dict)
+    print_comparison(stats_dict, markdown=args.markdown)
 
     # Generate visualization if requested
     if args.visualize:
