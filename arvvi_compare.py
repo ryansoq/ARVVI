@@ -171,7 +171,7 @@ Examples:
     # Generate visualization if requested
     if args.visualize:
         try:
-            from arvvi_visualizer import compare_models
+            from arvvi_visualizer import compare_models, visualize_instruction_breakdown_by_model
 
             # Convert data format for visualizer
             visualizer_stats = {}
@@ -179,7 +179,12 @@ Examples:
                 visualizer_stats[model_name] = data.get('statistics', {})
 
             output_dir = args.output or '.'
+
+            # Generate grouped comparison chart
             compare_models(visualizer_stats, output_dir)
+
+            # Generate stacked breakdown chart
+            visualize_instruction_breakdown_by_model(visualizer_stats, output_dir)
 
         except ImportError:
             print("\nWarning: matplotlib not installed. Install with: pip install matplotlib")

@@ -191,6 +191,101 @@ def compare_models(stats_dict, output_dir='.'):
     print(f"\nModel comparison chart saved to: {output_file}")
 
 
+def visualize_instruction_breakdown_by_model(stats_dict, output_dir='.', top_n=20):
+    """
+    Create stacked horizontal bar chart showing instruction usage breakdown by model
+
+    Args:
+        stats_dict: Dictionary mapping model names to their statistics
+        output_dir: Directory to save the chart
+        top_n: Number of top instructions to show (default: 20)
+    """
+    if len(stats_dict) < 1:
+        print("Need at least 1 model for breakdown visualization")
+        return
+
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    # Collect all unique instructions and calculate totals
+    instruction_totals = {}
+    instruction_by_model = {}  # {instruction: {model: count}}
+
+    for model_name, stats in stats_dict.items():
+        instruction_stats = stats.get('instruction_stats', {})
+        for instr, count in instruction_stats.items():
+            if instr not in instruction_totals:
+                instruction_totals[instr] = 0
+                instruction_by_model[instr] = {}
+            instruction_totals[instr] += count
+            instruction_by_model[instr][model_name] = count
+
+    # Sort by total count and take top N
+    sorted_instructions = sorted(instruction_totals.items(), key=lambda x: x[1], reverse=True)
+    top_instructions = sorted_instructions[:top_n]
+    top_instr_names = [instr for instr, _ in top_instructions]
+    top_instr_totals = [total for _, total in top_instructions]
+
+    # Prepare data for stacked bar chart
+    model_names = list(stats_dict.keys())
+    colors = plt.cm.tab20(range(len(model_names)))
+
+    # Create figure
+    fig, ax = plt.subplots(figsize=(14, max(10, top_n * 0.4)))
+
+    # Build stacked bars
+    left_positions = [0] * len(top_instr_names)
+
+    for model_idx, model_name in enumerate(model_names):
+        model_counts = []
+        for instr in top_instr_names:
+            count = instruction_by_model[instr].get(model_name, 0)
+            model_counts.append(count)
+
+        # Only show in legend if this model has non-zero contribution
+        if sum(model_counts) > 0:
+            label = model_name[:20]  # Truncate long names
+        else:
+            label = None
+
+        ax.barh(range(len(top_instr_names)), model_counts,
+                left=left_positions, color=colors[model_idx],
+                label=label, edgecolor='white', linewidth=0.5)
+
+        # Update left positions for next stack
+        left_positions = [left + count for left, count in zip(left_positions, model_counts)]
+
+    # Add total count labels at the end of each bar
+    for i, (instr_name, total) in enumerate(zip(top_instr_names, top_instr_totals)):
+        ax.text(total, i, f'  {total:,}',
+                va='center', fontsize=9, fontweight='bold')
+
+    # Formatting
+    ax.set_yticks(range(len(top_instr_names)))
+    ax.set_yticklabels(top_instr_names, fontsize=10)
+    ax.set_xlabel('Total Instruction Count', fontweight='bold', fontsize=12)
+    ax.set_title(f'Top {top_n} RVV Instructions - Usage Breakdown by Model',
+                 fontsize=14, fontweight='bold', pad=20)
+
+    # Legend - only show models that contributed
+    ax.legend(bbox_to_anchor=(1.02, 1), loc='upper left',
+              fontsize=9, framealpha=0.9)
+
+    ax.grid(axis='x', alpha=0.3, linestyle='--')
+    ax.set_axisbelow(True)
+
+    # Add instruction rank numbers
+    for i in range(len(top_instr_names)):
+        ax.text(-max(top_instr_totals) * 0.02, i, f'#{i + 1}',
+                ha='right', va='center', fontsize=8, color='gray')
+
+    plt.tight_layout()
+
+    output_file = output_path / 'instruction_breakdown_by_model.png'
+    plt.savefig(output_file, dpi=300, bbox_inches='tight')
+    print(f"Instruction breakdown chart saved to: {output_file}")
+
+
 if __name__ == '__main__':
     # Example usage
     print("This module is meant to be imported by arvvi.py")
