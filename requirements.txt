@@ -1,4 +1,4 @@
-# ARVVI - AndeSight RISC-V Vector Instruction Analyzer
+# ARVVI - Analyzer for RISC-V Vector Instructions
 # Python dependencies
 
 # For visualization
